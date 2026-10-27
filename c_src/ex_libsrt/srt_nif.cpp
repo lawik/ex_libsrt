@@ -151,6 +151,7 @@ UNIFEX_TERM start_server(UnifexEnv* env,
 
       if (auto it = state->conn_receivers.find(socket);
           it != std::end(state->conn_receivers)) {
+        std::lock_guard send_lock(state->send_mutex);
         send_srt_server_conn_closed(state->env, it->second, 1, socket);
       }
 
@@ -170,6 +171,7 @@ UNIFEX_TERM start_server(UnifexEnv* env,
             std::lock_guard lock(state->conn_receivers_mutex);
             if (auto it = state->conn_receivers.find(socket);
                 it != std::end(state->conn_receivers)) {
+              std::lock_guard send_lock(state->send_mutex);
               // TODO: make sure that the message has been properly sent
               send_srt_data(state->env, it->second, 1, socket, payload);
             }
@@ -181,17 +183,20 @@ UNIFEX_TERM start_server(UnifexEnv* env,
         });
 
     state->server->SetOnClientRejected([=](const char* stream_id) {
+      std::lock_guard send_lock(state->send_mutex);
       send_srt_server_rejected_client(state->env, state->owner, 1, stream_id);
     });
 
     state->server->SetOnClientPending(
         [=](Server::SrtSocket socket, const std::string& stream_id) {
+          std::lock_guard send_lock(state->send_mutex);
           send_srt_server_conn(
               state->env, state->owner, 1, socket, stream_id.c_str());
         });
 
     state->server->SetOnConnectionTimeout(
         [=](Server::SrtSocket socket, const std::string& stream_id) {
+          std::lock_guard send_lock(state->send_mutex);
           send_srt_server_conn_timeout(
               state->env, state->owner, 1, socket, stream_id.c_str());
         });
@@ -315,13 +320,18 @@ start_client(UnifexEnv* env,
 
     state->client = std::make_unique<Client>(10, 200);
 
-    state->client->SetOnSocketConnected(
-        [=]() { send_srt_client_connected(state->env, state->owner, 1); });
+    state->client->SetOnSocketConnected([=]() {
+      std::lock_guard send_lock(state->send_mutex);
+      send_srt_client_connected(state->env, state->owner, 1);
+    });
 
-    state->client->SetOnSocketDisconnected(
-        [=]() { send_srt_client_disconnected(state->env, state->owner, 1); });
+    state->client->SetOnSocketDisconnected([=]() {
+      std::lock_guard send_lock(state->send_mutex);
+      send_srt_client_disconnected(state->env, state->owner, 1);
+    });
 
     state->client->SetOnSocketError([=](const std::string& reason) {
+      std::lock_guard send_lock(state->send_mutex);
       send_srt_client_error(state->env, state->owner, 1, reason.c_str());
     });
 
