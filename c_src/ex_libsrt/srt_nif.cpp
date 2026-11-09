@@ -221,6 +221,7 @@ UNIFEX_TERM start_server(UnifexEnv* env,
 UNIFEX_TERM add_stream_id_to_whitelist(UnifexEnv* env,
                                        char* stream_id,
                                        UnifexState* state) {
+  std::lock_guard lock(state->instance_mutex);
   state->server->AddStreamIdToWhitelist(stream_id);
   return add_stream_id_to_whitelist_result_ok(env);
 }
@@ -228,6 +229,7 @@ UNIFEX_TERM add_stream_id_to_whitelist(UnifexEnv* env,
 UNIFEX_TERM remove_stream_id_from_whitelist(UnifexEnv* env,
                                             char* stream_id,
                                             UnifexState* state) {
+  std::lock_guard lock(state->instance_mutex);
   state->server->RemoveStreamIdFromWhitelist(stream_id);
   return remove_stream_id_from_whitelist_result_ok(env);
 }
@@ -236,6 +238,7 @@ UNIFEX_TERM bind_with_process(UnifexEnv* env,
                               int conn_id,
                               UnifexPid receiver,
                               UnifexState* state) {
+  std::lock_guard lock(state->instance_mutex);
   if (state->server == nullptr) {
     return bind_with_process_result_error(env, "Server is not active");
   }
@@ -258,6 +261,7 @@ UNIFEX_TERM bind_with_process(UnifexEnv* env,
 
 UNIFEX_TERM
 read_server_socket_stats(UnifexEnv* env, int conn_id, UnifexState* state) {
+  std::lock_guard lock(state->instance_mutex);
   if (state->server == nullptr) {
     return read_server_socket_stats_result_error(env, "Server is not active");
   }
@@ -273,19 +277,28 @@ read_server_socket_stats(UnifexEnv* env, int conn_id, UnifexState* state) {
 }
 
 UNIFEX_TERM stop_server(UnifexEnv* env, UnifexState* state) {
-  if (state->server == nullptr) {
-    return stop_server_result_error(env, "Server is not active");
+  std::unique_ptr<Server> server;
+  {
+    std::lock_guard lock(state->instance_mutex);
+    if (state->server == nullptr) {
+      return stop_server_result_error(env, "Server is not active");
+    }
+
+    close_all_connections(state);
+    // Take the server out of the state while holding the lock, so that no other
+    // NIF can reach it anymore, and stop it without holding the lock, so that
+    // the other NIFs are not blocked for the duration of Stop().
+    server = std::move(state->server);
   }
 
-  close_all_connections(state);
-  state->server->Stop();
-  state->server = nullptr;
+  server->Stop();
 
   return stop_server_result_ok(env);
 }
 
 UNIFEX_TERM
 close_server_connection(UnifexEnv* env, int conn_id, UnifexState* state) {
+  std::lock_guard lock(state->instance_mutex);
   if (state->server == nullptr) {
     return close_server_connection_result_error(env, "Server is not active");
   }
@@ -350,6 +363,7 @@ start_client(UnifexEnv* env,
 
 UNIFEX_TERM
 send_client_data(UnifexEnv* env, UnifexPayload* payload, UnifexState* state) {
+  std::lock_guard lock(state->instance_mutex);
   if (state->client == nullptr) {
     return send_client_data_result_error(env, "Client is not active");
   }
@@ -368,6 +382,7 @@ send_client_data(UnifexEnv* env, UnifexPayload* payload, UnifexState* state) {
 }
 
 UNIFEX_TERM read_client_socket_stats(UnifexEnv* env, UnifexState* state) {
+  std::lock_guard lock(state->instance_mutex);
   if (state->client == nullptr) {
     return read_client_socket_stats_result_error(env, "Client is not active");
   }
@@ -384,12 +399,18 @@ UNIFEX_TERM read_client_socket_stats(UnifexEnv* env, UnifexState* state) {
 }
 
 UNIFEX_TERM stop_client(UnifexEnv* env, UnifexState* state) {
-  if (state->client == nullptr) {
-    return stop_client_result_error(env, "Client is not active");
+  std::unique_ptr<Client> client;
+  {
+    std::lock_guard lock(state->instance_mutex);
+    if (state->client == nullptr) {
+      return stop_client_result_error(env, "Client is not active");
+    }
+
+    // See stop_server
+    client = std::move(state->client);
   }
 
-  state->client->Stop();
-  state->client = nullptr;
+  client->Stop();
 
   return stop_client_result_ok(env);
 }

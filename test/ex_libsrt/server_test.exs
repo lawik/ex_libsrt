@@ -271,6 +271,35 @@ defmodule ExLibSRT.ServerTest do
     end
   end
 
+  describe "stopping the server" do
+    test "while other processes are calling its NIFs" do
+      srt_port = Enum.random(10_000..20_000)
+
+      {:ok, server_ref} =
+        ExLibSRT.Native.start_server("127.0.0.1", srt_port, "", -1, true, [], self())
+
+      tasks =
+        for _i <- 1..4 do
+          Task.async(fn ->
+            for _j <- 1..1_000 do
+              ExLibSRT.Native.read_server_socket_stats(1, server_ref)
+              ExLibSRT.Native.bind_with_process(1, self(), server_ref)
+              ExLibSRT.Native.close_server_connection(1, server_ref)
+            end
+          end)
+        end
+
+      Process.sleep(20)
+      assert :ok = ExLibSRT.Native.stop_server(server_ref)
+      Enum.each(tasks, &Task.await(&1, 30_000))
+
+      assert {:error, "Server is not active"} = ExLibSRT.Native.stop_server(server_ref)
+
+      assert {:error, "Server is not active"} =
+               ExLibSRT.Native.bind_with_process(1, self(), server_ref)
+    end
+  end
+
   describe "accept-all mode" do
     setup :prepare_streaming_accept_all
 
