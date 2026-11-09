@@ -96,4 +96,4 @@ sends :srt_client_connected :: label
 sends :srt_client_disconnected :: label
 sends {:srt_client_error :: label, reason :: string}
 
-dirty :io,  start_server: 7, bind_with_process: 3, close_server_connection: 2, stop_server: 1, start_client: 5, read_server_socket_stats: 2, read_client_socket_stats: 1
+dirty :io,  start_server: 7, bind_with_process: 3, close_server_connection: 2, stop_server: 1, start_client: 5, read_server_socket_stats: 2, read_client_socket_stats: 1, stop_client: 1
