@@ -94,15 +94,23 @@ defmodule ExLibSRT.ClientTest do
   # Password validation tests
   describe "client password validation" do
     test "rejects too short password" do
-      assert {:error, "SRT password must be at least 10 characters long", 0} =
+      assert {:error, "SRT password must be at least 10 bytes long", 0} =
                Client.start_link("127.0.0.1", 8080, "stream1", "short")
     end
 
     test "rejects too long password" do
       long_password = String.duplicate("a", 80)
 
-      assert {:error, "SRT password must be at most 79 characters long", 0} =
+      assert {:error, "SRT password must be at most 79 bytes long", 0} =
                Client.start_link("127.0.0.1", 8080, "stream1", long_password)
+    end
+
+    test "rejects password longer than 79 bytes even if it has fewer characters" do
+      # 40 two-byte characters pass a character count check but are 80 bytes long
+      multibyte_password = String.duplicate("ą", 40)
+
+      assert {:error, "SRT password must be at most 79 bytes long", 0} =
+               Client.start_link("127.0.0.1", 8080, "stream1", multibyte_password)
     end
 
     test "accepts valid password length without server", _ctx do

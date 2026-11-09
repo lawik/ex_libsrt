@@ -18,6 +18,13 @@ void Server::Run(const std::string& address,
   this->accept_all = accept_all;
   this->stream_ids_whitelist = std::move(ids_whitelist);
 
+  // libsrt accepts only passphrases of 10 to 79 bytes; the listen callback
+  // has no way to report that, so fail here instead of running unencrypted
+  if (!password.empty() && (password.size() < 10 || password.size() > 79)) {
+    throw std::runtime_error(
+        "SRT passphrase must be between 10 and 79 bytes long");
+  }
+
   struct sockaddr_storage ss;
   socklen_t ss_len;
   int af;
@@ -238,12 +245,22 @@ int Server::OnNewConnection(SRTSOCKET ns,
     address = ip;
   }
 
-  // Set password if provided
+  // Set password if provided. If this fails the socket has no passphrase and
+  // would accept unauthenticated peers, so the connection must be rejected.
   if (!password.empty()) {
-    srt_setsockflag(ns, SRTO_PASSPHRASE, password.c_str(), password.length());
+    if (srt_setsockflag(
+            ns, SRTO_PASSPHRASE, password.c_str(), password.length()) ==
+        SRT_ERROR) {
+      srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 500);
+      return -1;
+    }
   }
   if (latency_ms >= 0) {
-    srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms);
+    if (srt_setsockflag(ns, SRTO_LATENCY, &latency_ms, sizeof latency_ms) ==
+        SRT_ERROR) {
+      srt_setrejectreason(ns, SRT_REJC_PREDEFINED + 500);
+      return -1;
+    }
   }
 
   if (!accept_all && stream_ids_whitelist.find(std::string(streamid)) ==

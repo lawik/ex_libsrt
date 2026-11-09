@@ -16,7 +16,7 @@ defmodule ExLibSRT.Client do
   ## Password Authentication
 
   When connecting to a server that requires password authentication:
-  - Password must be between 10 and 79 characters long (SRT specification requirement: https://github.com/Haivision/srt/blob/master/docs/API/API-socket-options.md#srto_passphrase)
+  - Password must be between 10 and 79 bytes long (SRT specification requirement: https://github.com/Haivision/srt/blob/master/docs/API/API-socket-options.md#srto_passphrase)
   - Empty string means no password authentication (default behavior)
   - Password must match the server's password
 
@@ -40,7 +40,7 @@ defmodule ExLibSRT.Client do
 
   ## Password Authentication
 
-  If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
+  If a password is provided, it must be between 10 and 79 bytes long according to SRT specification.
   An empty string means no password authentication will be used.
   """
   @spec start_link(
@@ -67,7 +67,7 @@ defmodule ExLibSRT.Client do
 
   ## Password Authentication
 
-  If a password is provided, it must be between 10 and 79 characters long according to SRT specification.
+  If a password is provided, it must be between 10 and 79 bytes long according to SRT specification.
   An empty string means no password authentication will be used.
   """
   @spec start(address :: String.t(), port :: non_neg_integer(), stream_id :: String.t()) ::
@@ -128,14 +128,15 @@ defmodule ExLibSRT.Client do
   defp validate_password(""), do: :ok
 
   defp validate_password(password) when is_binary(password) do
-    password_length = String.length(password)
+    # libsrt limits the passphrase by its byte length, not by the number of characters
+    password_length = byte_size(password)
 
     cond do
       password_length < 10 ->
-        {:error, "SRT password must be at least 10 characters long"}
+        {:error, "SRT password must be at least 10 bytes long"}
 
       password_length > 79 ->
-        {:error, "SRT password must be at most 79 characters long"}
+        {:error, "SRT password must be at most 79 bytes long"}
 
       true ->
         :ok
